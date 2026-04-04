@@ -17,7 +17,7 @@ SwitchProController::SwitchProController(uint32_t mac0, uint32_t mac1, int port)
 
 void SwitchProController::processReport(uint8_t *buffer, size_t length)
 {
-    if (buffer[0] == 0x30)
+    if (buffer[0] == 0x30 || buffer[0] == 0x21)
         processStandardReport(buffer, length);
     else if (buffer[0] == 0x3F)
         processSimpleReport(buffer, length);
