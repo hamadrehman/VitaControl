@@ -52,12 +52,46 @@ struct SwitchProReport0x30
 }
 __attribute__((packed));
 
+struct SwitchProReport0x3F
+{
+    uint8_t reportId;
+
+    uint8_t b  : 1;
+    uint8_t a  : 1;
+    uint8_t y  : 1;
+    uint8_t x  : 1;
+    uint8_t l  : 1;
+    uint8_t r  : 1;
+    uint8_t zl : 1;
+    uint8_t zr : 1;
+
+    uint8_t minus   : 1;
+    uint8_t plus    : 1;
+    uint8_t stickL  : 1;
+    uint8_t stickR  : 1;
+    uint8_t home    : 1;
+    uint8_t capture : 1;
+    uint8_t         : 0;
+
+    uint8_t dpad;
+
+    uint8_t leftX;
+    uint8_t leftY;
+    uint8_t rightX;
+    uint8_t rightY;
+}
+__attribute__((packed));
+
 class SwitchProController: public Controller
 {
     public:
         SwitchProController(uint32_t mac0, uint32_t mac1, int port);
 
         void processReport(uint8_t *buffer, size_t length);
+
+    private:
+        void processStandardReport(uint8_t *buffer, size_t length);
+        void processSimpleReport(uint8_t *buffer, size_t length);
 };
 
 #endif // SWITCH_PRO_CONTROLLER_H

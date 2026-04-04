@@ -17,11 +17,15 @@ SwitchProController::SwitchProController(uint32_t mac0, uint32_t mac1, int port)
 
 void SwitchProController::processReport(uint8_t *buffer, size_t length)
 {
-    // Only process the report if it's of the right type
-    if (buffer[0] != 0x30)
-        return;
+    if (buffer[0] == 0x30)
+        processStandardReport(buffer, length);
+    else if (buffer[0] == 0x3F)
+        processSimpleReport(buffer, length);
+}
 
-    // Interpret the data as an input report
+void SwitchProController::processStandardReport(uint8_t *buffer, size_t length)
+{
+    // Interpret the data as a standard input report
     SwitchProReport0x30 *report = (SwitchProReport0x30*)buffer;
 
     // Clear the old control data
@@ -74,4 +78,57 @@ void SwitchProController::processReport(uint8_t *buffer, size_t length)
     motionState.velocityZ = report->velocityZ;
 
     // TODO: implement battery level
+}
+
+void SwitchProController::processSimpleReport(uint8_t *buffer, size_t length)
+{
+    // Interpret the data as a simple input report (used by 8BitDo and other clones)
+    SwitchProReport0x3F *report = (SwitchProReport0x3F*)buffer;
+
+    // Clear the old control data
+    controlData.buttons = 0;
+
+    // Map the face buttons
+    if (report->b) controlData.buttons |= SCE_CTRL_CROSS;
+    if (report->a) controlData.buttons |= SCE_CTRL_CIRCLE;
+    if (report->x) controlData.buttons |= SCE_CTRL_TRIANGLE;
+    if (report->y) controlData.buttons |= SCE_CTRL_SQUARE;
+
+    // Map the D-pad from hat switch value
+    switch (report->dpad)
+    {
+        case 0: controlData.buttons |= SCE_CTRL_UP; break;
+        case 1: controlData.buttons |= SCE_CTRL_UP | SCE_CTRL_RIGHT; break;
+        case 2: controlData.buttons |= SCE_CTRL_RIGHT; break;
+        case 3: controlData.buttons |= SCE_CTRL_DOWN | SCE_CTRL_RIGHT; break;
+        case 4: controlData.buttons |= SCE_CTRL_DOWN; break;
+        case 5: controlData.buttons |= SCE_CTRL_DOWN | SCE_CTRL_LEFT; break;
+        case 6: controlData.buttons |= SCE_CTRL_LEFT; break;
+        case 7: controlData.buttons |= SCE_CTRL_UP | SCE_CTRL_LEFT; break;
+        default: break; // 8 = centered / released
+    }
+
+    // Map the triggers
+    if (report->l)      controlData.buttons |= SCE_CTRL_L1;
+    if (report->r)      controlData.buttons |= SCE_CTRL_R1;
+    if (report->zl)     controlData.buttons |= SCE_CTRL_LTRIGGER;
+    if (report->zr)     controlData.buttons |= SCE_CTRL_RTRIGGER;
+    if (report->stickL) controlData.buttons |= SCE_CTRL_L3;
+    if (report->stickR) controlData.buttons |= SCE_CTRL_R3;
+
+    // Map the menu buttons
+    if (report->plus)  controlData.buttons |= SCE_CTRL_START;
+    if (report->minus) controlData.buttons |= SCE_CTRL_SELECT;
+    if (report->home)  controlData.buttons |= SCE_CTRL_PSBUTTON;
+
+    // Map the extra buttons
+    if (report->capture) controlData.buttons |= SCE_CTRL_EXT1;
+
+    // Map the sticks (already 8-bit in simple mode)
+    controlData.leftX  = report->leftX;
+    controlData.leftY  = report->leftY;
+    controlData.rightX = report->rightX;
+    controlData.rightY = report->rightY;
+
+    // No motion data available in simple mode
 }
