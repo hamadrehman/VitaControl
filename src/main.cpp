@@ -131,8 +131,13 @@ static void patchControlData(int port, SceCtrlData *data, int count, bool negati
 
     for (int i = 0; i < count; i++)
     {
+        // Negative APIs report pressed/intercepted buttons as cleared bits.
+        const bool intercepted = negative
+            ? (data[i].buttons & SCE_CTRL_INTERCEPTED) == 0
+            : (data[i].buttons & SCE_CTRL_INTERCEPTED) != 0;
+
         // Respect inputs consumed by higher-priority UI like the Home/Settings overlays.
-        if (data[i].buttons & SCE_CTRL_INTERCEPTED)
+        if (intercepted)
             continue;
 
         // Reset initial values for controller ports (port 0 is additive)
