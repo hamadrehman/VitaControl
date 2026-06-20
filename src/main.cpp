@@ -120,13 +120,21 @@ static void patchControlData(int port, SceCtrlData *data, int count, bool negati
     int cont = (port > 0) ? (port - 1) : 0;
     if (!controllers[cont]) return;
     const ControlData *controlData = controllers[cont]->getControlData();
+    uint32_t buttons = controlData->buttons;
 
     // Forward PS button presses to the kernel so the system menu receives them
-    if (controlData->buttons & SCE_CTRL_PSBUTTON)
+    if (buttons & SCE_CTRL_PSBUTTON)
+    {
         ksceCtrlSetButtonEmulation(port, 0, 0, SCE_CTRL_PSBUTTON, 16);
+        buttons &= ~SCE_CTRL_PSBUTTON;
+    }
 
     for (int i = 0; i < count; i++)
     {
+        // Respect inputs consumed by higher-priority UI like the Home/Settings overlays.
+        if (data[i].buttons & SCE_CTRL_INTERCEPTED)
+            continue;
+
         // Reset initial values for controller ports (port 0 is additive)
         if (port > 0)
         {
@@ -137,9 +145,9 @@ static void patchControlData(int port, SceCtrlData *data, int count, bool negati
         // Set the button data from the controller, with optional negative logic
         // TODO: properly handle extended/analog triggers
         if (negative)
-            data[i].buttons &= ~controlData->buttons;
+            data[i].buttons &= ~buttons;
         else
-            data[i].buttons |= controlData->buttons;
+            data[i].buttons |= buttons;
 
         // Set the stick data from the controller
         data[i].lx = clamp(data[i].lx + controlData->leftX  - 127, 0, 255);
