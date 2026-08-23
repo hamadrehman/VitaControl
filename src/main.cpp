@@ -166,8 +166,8 @@ static void patchControlData(int port, SceCtrlData *data, int count, bool negati
     DECL_FUNC_HOOK(name, int port, SceCtrlData *data, int count)                                  \
     {                                                                                             \
         int ret = TAI_CONTINUE(int(*)(int, SceCtrlData*, int), name##HookRef, port, data, count); \
-        if (ret >= 0)                                                                             \
-            patchControlData(port, data, count, (negative));                                      \
+        if (ret > 0)                                                                              \
+            patchControlData(port, data, ret, (negative));                                        \
         return ret;                                                                               \
     }
 
@@ -254,81 +254,85 @@ static int bluetoothCallback(int notifyId, int notifyCount, int notifyArg, void 
 {
     static uint8_t buffer[0x100];
 
-    SceBtEvent event;
-
-    // Read a bluetooth event, or multiple to take care of overflow
-    int ret;
-    while ((ret = ksceBtReadEvent(&event, 1)) == SCE_BT_ERROR_CB_OVERFLOW);
-    if (ret <= 0) return 0;
-
-    int cont = -1;
-
-    // Search connected controllers for the device that triggered the event
-    for (int i = 0; i < MAX_CONTROLLERS; i++)
+    while (true)
     {
-        if (controllers[i] && controllers[i]->getMac0() == event.mac0 && controllers[i]->getMac1() == event.mac1)
-        {
-            cont = i;
+        SceBtEvent event;
+
+        // Drain every event queued for this callback.
+        int ret;
+        while ((ret = ksceBtReadEvent(&event, 1)) == SCE_BT_ERROR_CB_OVERFLOW);
+        if (ret <= 0)
             break;
-        }
-    }
 
-    // If the device isn't a connected controller, find a free controller slot
-    if (cont == -1)
-    {
+        int cont = -1;
+
+        // Search connected controllers for the device that triggered the event
         for (int i = 0; i < MAX_CONTROLLERS; i++)
         {
-            if (!controllers[i])
+            if (controllers[i] && controllers[i]->getMac0() == event.mac0 && controllers[i]->getMac1() == event.mac1)
             {
                 cont = i;
                 break;
             }
         }
 
+        // If the device isn't a connected controller, find a free controller slot
         if (cont == -1)
-            return 0;
-    }
-
-    // Handle the bluetooth event
-    switch (event.id)
-    {
-        case 0x05: // Connection accepted
-            // Try to create a controller instance for the device
-            if (!controllers[cont])
-                controllers[cont] = Controller::makeController(event.mac0, event.mac1, cont);
-            break;
-
-        case 0x06: // Connection terminated
-            // Remove the controller instance for the device
-            if (controllers[cont])
+        {
+            for (int i = 0; i < MAX_CONTROLLERS; i++)
             {
-                Mempool::free(controllers[cont]);
-                controllers[cont] = nullptr;
+                if (!controllers[i])
+                {
+                    cont = i;
+                    break;
+                }
             }
-            break;
 
-        case 0x0A: // Reply to read request
-            if (controllers[cont])
-            {
-                // Process the received input report and request another
-                controllers[cont]->processReport(buffer, sizeof(buffer));
-                controllers[cont]->requestReport(HID_REQUEST_READ, buffer, sizeof(buffer));
+            if (cont == -1)
+                continue;
+        }
 
-                // Keep the screen awake when inputs are pressed
-                const ControlData *c = controllers[cont]->getControlData();
-                const TouchData *t = controllers[cont]->getTouchData();
-                if (c->buttons || t->touchActive[0] || t->touchActive[1] || AXIS_MOVED(c->leftX) ||
-                    AXIS_MOVED(c->leftY) || AXIS_MOVED(c->rightX) || AXIS_MOVED(c->rightY))
-                    ksceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
-            }
-            break;
+        // Handle the bluetooth event
+        switch (event.id)
+        {
+            case 0x05: // Connection accepted
+                // Try to create a controller instance for the device
+                if (!controllers[cont])
+                    controllers[cont] = Controller::makeController(event.mac0, event.mac1, cont);
+                break;
 
-        case 0x0B: // Reply to write request
-        case 0x0C: // Reply to feature request
-            // Request an initial input report (write/feature requests are typically part of controller init)
-            if (controllers[cont])
-                controllers[cont]->requestReport(HID_REQUEST_READ, buffer, sizeof(buffer));
-            break;
+            case 0x06: // Connection terminated
+                // Remove the controller instance for the device
+                if (controllers[cont])
+                {
+                    Mempool::free(controllers[cont]);
+                    controllers[cont] = nullptr;
+                }
+                break;
+
+            case 0x0A: // Reply to read request
+                if (controllers[cont])
+                {
+                    // Process the received input report and request another
+                    controllers[cont]->processReport(buffer, sizeof(buffer));
+                    controllers[cont]->requestReport(HID_REQUEST_READ, buffer, sizeof(buffer));
+
+                    // Keep the screen awake when inputs are pressed
+                    const ControlData *c = controllers[cont]->getControlData();
+                    const TouchData *t = controllers[cont]->getTouchData();
+                    if (c->buttons || t->touchActive[0] || t->touchActive[1] || AXIS_MOVED(c->leftX) ||
+                        AXIS_MOVED(c->leftY) || AXIS_MOVED(c->rightX) || AXIS_MOVED(c->rightY))
+                        ksceKernelPowerTick(SCE_KERNEL_POWER_TICK_DEFAULT);
+                }
+                break;
+
+            case 0x0B: // Reply to write request
+            case 0x0C: // Reply to feature request
+                // Request an initial input report (write/feature requests are typically part of controller init)
+                if (controllers[cont])
+                    controllers[cont]->requestReport(HID_REQUEST_READ, buffer, sizeof(buffer));
+                break;
+        }
     }
 
     return 0;
